@@ -832,4 +832,5 @@ app.use((err, req, res, next) => {
 // =============================================
 // Start Server
 // =============================================
-app.listen(PORT, () => logger.info(`Server running at http://localhost:${PORT}`));
+const PORT = process.env.PORT || 3000; // Use Render's PORT or fallback to 3000 locally
+app.listen(PORT, () => console.log(`Server running at http://localhost:${PORT}`));
