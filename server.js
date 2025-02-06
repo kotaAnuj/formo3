@@ -1,27 +1,10 @@
 // server.js
-
-/**
- * Complete Express Server with:
- * - Google Forms/Sheets integration,
- * - Firebase token verification,
- * - Logging with Winston & Morgan,
- * - Rate limiting,
- * - Swagger API documentation,
- * - Gemini AI integration for dynamic content generation,
- * - Endpoints to generate/edit forms/sheets, send emails, and create contact groups.
- *
- * Required packages:
- * express, cors, googleapis, @google/generative-ai, firebase-admin, path, dotenv,
- * express-rate-limit, express-validator, winston, morgan, swagger-jsdoc, swagger-ui-express.
- */
-
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { google } = require('googleapis');
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const admin = require('firebase-admin');
-const path = require('path');
 const rateLimit = require('express-rate-limit');
 const { body, validationResult } = require('express-validator');
 const winston = require('winston');
@@ -29,27 +12,20 @@ const morgan = require('morgan');
 const swaggerJsdoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
 
-// =============================================
-// Firebase Admin Initialization using your service account key file.
-// Make sure that your service account file (e.g., serviceAccountKey.json)
-// is located in the root folder and its name matches below.
+// Firebase Initialization
 const serviceAccount = require('./nothing-d3af4-firebase-adminsdk-gu32b-c5f1c1120e.json');
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
   databaseURL: process.env.FIREBASE_DATABASE_URL
 });
 
-// =============================================
-// Express App Configuration
-// =============================================
+// Express App Setup
 const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-// =============================================
-// Logging Setup using Winston and Morgan
-// =============================================
+// Logging Setup
 const logger = winston.createLogger({
   level: 'info',
   format: winston.format.combine(
@@ -60,37 +36,23 @@ const logger = winston.createLogger({
 });
 app.use(morgan('combined', { stream: { write: message => logger.info(message.trim()) } }));
 
-// =============================================
-// Rate Limiting Middleware
-// =============================================
+// Rate Limiting
 const limiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 100 // Limit each IP to 100 requests per minute
 });
 app.use(limiter);
 
-// =============================================
-// Server Port Configuration from .env (defaults to 3000 if not set)
-// =============================================
-const PORT = process.env.PORT || 3000;
-
-// =============================================
-// Swagger API Documentation Setup
-// =============================================
+// Swagger API Documentation
 const swaggerOptions = {
   swaggerDefinition: {
     openapi: '3.0.0',
     info: {
       title: 'Google Form & Sheet Generator API',
       version: '1.0.0',
-      description: 'API documentation for the form and sheet generation service'
+      description: 'API documentation for form and sheet generation service'
     },
-    servers: [
-      {
-        url: `http://localhost:${PORT}`,
-        description: 'Local server'
-      }
-    ],
+    servers: [{ url: `http://localhost:${process.env.PORT || 3000}` }],
     components: {
       securitySchemes: {
         bearerAuth: {
@@ -100,45 +62,33 @@ const swaggerOptions = {
         }
       }
     },
-    security: [{
-      bearerAuth: []
-    }]
+    security: [{ bearerAuth: [] }]
   },
   apis: ['./server.js']
 };
-
 const swaggerSpec = swaggerJsdoc(swaggerOptions);
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
-// =============================================
 // Google Gemini AI Initialization
-// =============================================
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
-// =============================================
 // Google Authentication Configuration
-// =============================================
-const googleCredentials = {
-  type: "service_account",
-  project_id: process.env.GOOGLE_PROJECT_ID,
-  private_key_id: process.env.GOOGLE_PRIVATE_KEY_ID,
-  // Replace literal "\n" with actual newlines:
-  private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-  client_email: process.env.GOOGLE_CLIENT_EMAIL,
-  client_id: process.env.GOOGLE_CLIENT_ID,
-  auth_uri: process.env.GOOGLE_AUTH_URI,
-  token_uri: process.env.GOOGLE_TOKEN_URI,
-  auth_provider_x509_cert_url: process.env.GOOGLE_AUTH_PROVIDER_X509_CERT_URL,
-  client_x509_cert_url: process.env.GOOGLE_CLIENT_X509_CERT_URL
-};
-
 const auth = new google.auth.GoogleAuth({
-  credentials: googleCredentials,
+  credentials: {
+    type: "service_account",
+    project_id: process.env.GOOGLE_PROJECT_ID,
+    private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+    client_email: process.env.GOOGLE_CLIENT_EMAIL,
+    client_id: process.env.GOOGLE_CLIENT_ID,
+    auth_uri: process.env.GOOGLE_AUTH_URI,
+    token_uri: process.env.GOOGLE_TOKEN_URI,
+    auth_provider_x509_cert_url: process.env.GOOGLE_AUTH_PROVIDER_X509_CERT_URL,
+    client_x509_cert_url: process.env.GOOGLE_CLIENT_X509_CERT_URL
+  },
   scopes: [
     'https://www.googleapis.com/auth/forms',
     'https://www.googleapis.com/auth/drive',
-    'https://www.googleapis.com/auth/drive.file',
     'https://www.googleapis.com/auth/spreadsheets',
     'https://www.googleapis.com/auth/gmail.send',
     'https://www.googleapis.com/auth/contacts'
@@ -148,9 +98,7 @@ const sheets = google.sheets({ version: 'v4', auth });
 const gmail = google.gmail({ version: 'v1', auth });
 const people = google.people({ version: 'v1', auth });
 
-// =============================================
 // Helper Functions
-// =============================================
 
 /**
  * Generates a Google Form structure using Gemini AI.
@@ -176,12 +124,8 @@ Return a JSON object (and nothing else) with exactly this structure:
     const text = response.text();
     const cleanedText = text.replace(/```json\n?/g, '').replace(/```\n?/g, '');
     const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error('Invalid AI response format');
-    }
-    const formStructure = JSON.parse(jsonMatch[0]);
-    logger.info('Form structure generated successfully');
-    return formStructure;
+    if (!jsonMatch) throw new Error('Invalid AI response format');
+    return JSON.parse(jsonMatch[0]);
   } catch (error) {
     logger.error('Gemini API Error:', error);
     throw new Error(`Failed to generate form structure: ${error.message}`);
